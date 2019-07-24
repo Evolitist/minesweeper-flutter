@@ -4,14 +4,31 @@ import 'package:minesweeper/render/field.dart';
 class FieldRenderObject extends LeafRenderObjectWidget {
   final int gameState;
   final List<int> states;
+  final double cellSize;
+  final int width;
   final ValueChanged<int> onTap;
   final ValueChanged<int> onLongTap;
 
-  const FieldRenderObject({Key key, this.gameState = 3, this.states, this.onTap, this.onLongTap}) : super(key: key);
+  const FieldRenderObject({
+    Key key,
+    this.gameState = 3,
+    this.states,
+    this.cellSize,
+    this.width,
+    this.onTap,
+    this.onLongTap,
+  }) : super(key: key);
 
   @override
   RenderField createRenderObject(BuildContext context) {
-    return RenderField(gameState: gameState, states: states, onTap: onTap, onLongTap: onLongTap);
+    return RenderField(
+      gameState: gameState,
+      states: states,
+      cellSize: cellSize,
+      width: width,
+      onTap: onTap,
+      onLongTap: onLongTap,
+    );
   }
 
   @override
@@ -19,6 +36,8 @@ class FieldRenderObject extends LeafRenderObjectWidget {
     renderObject
       ..gameState = gameState
       ..states = states
+      ..cellSize = cellSize
+      ..width = width
       ..onTap = onTap
       ..onLongTap = onLongTap;
   }

@@ -1,10 +1,8 @@
 import 'dart:async' show Timer;
 import 'dart:math' show Random;
 import 'dart:typed_data' show Uint8List;
-import 'dart:ui' show window;
 
-import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' show showDialog, AlertDialog, FlatButton, Colors, MaterialApp, ThemeData;
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, SystemChrome, SystemUiOverlayStyle, DeviceOrientation;
 
 import 'package:minesweeper/constants.dart';
@@ -18,8 +16,6 @@ import 'package:minesweeper/widget/field.dart';
 /// FLAGS
 /// 16 (0b00010000) = hidden
 /// 32 (0b00100000) = flag
-
-const List<int> _kNeighbors = [-1, 1, -kWidth, kWidth, -kWidth-1, -kWidth+1, kWidth-1, kWidth+1];
 
 void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -51,9 +47,10 @@ class Screen extends StatefulWidget {
 
 class _ScreenState extends State<Screen> with WidgetsBindingObserver {
   final KeepAliveHandle _resetter = KeepAliveHandle();
-  final ValueNotifier<int> _mines = ValueNotifier(kMines);
+  final ValueNotifier<int> _mines = ValueNotifier(0);
   final ValueNotifier<int> _time = ValueNotifier(0);
   final ValueNotifier<int> _state = ValueNotifier(3);
+  int _totalMines;
   int _delta = 1;
   Timer _timer;
 
@@ -98,7 +95,7 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
 
   void _resetGame() {
     _timer?.cancel();
-    _mines.value = kMines;
+    _mines.value = _totalMines ?? 0;
     _time.value = 0;
     _state.value = 3;
     _resetter.release();
@@ -160,74 +157,74 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Container(
-          color: kGray400,
-          padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-          child: Stack(
-            alignment: Alignment.center,
-            children: <Widget>[
-              const SizedBox(height: 58, width: double.infinity),
-              StatusIndicator(
-                status: _state,
-                onTap: () {
-                  if (_state.value < 3) _requestRestart();
-                },
-              ),
-              Positioned(
-                left: 16,
-                width: 80,
-                height: 48,
-                child: _buildCounter(context, _time),
-              ),
-              Positioned(
-                right: 16,
-                width: 80,
-                height: 48,
-                child: _buildCounter(context, _mines),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Container(
-            color: kGray700,
-            child: RepaintBoundary(
-              child: NotificationListener<BaseNotification>(
-                onNotification: (n) {
-                  if (n is FirstOpenNotification) {
-                    _state.value = 0;
-                    _timer = Timer.periodic(const Duration(seconds: 1), (i) {
-                      if (_time.value < 999) _time.value += _delta;
-                    });
-                  } else if (n is FlagNotification) {
-                    _mines.value += n.md;
-                  } else if (n is WinNotification && _state.value != 1) {
-                    _state.value = 1;
-                    _timer?.cancel();
-                    _mines.value = 0;
-                    _showWinMessage();
-                  } else if (n is LoseNotification && _state.value != 2) {
-                    _state.value = 2;
-                    _timer?.cancel();
-                  } else if (n is ResetNotification) {
-                    _resetGame();
-                  }
-                  return true;
-                },
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _state,
-                  builder: (context, data, child) {
-                    return const FieldController();
-                  },
-                ),
+    return Scaffold(
+      backgroundColor: kGray400,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  const SizedBox(height: 58, width: double.infinity),
+                  StatusIndicator(
+                    status: _state,
+                    onTap: () {
+                      if (_state.value < 3) _requestRestart();
+                    },
+                  ),
+                  Positioned(
+                    left: 16,
+                    width: 80,
+                    height: 48,
+                    child: _buildCounter(context, _time),
+                  ),
+                  Positioned(
+                    right: 16,
+                    width: 80,
+                    height: 48,
+                    child: _buildCounter(context, _mines),
+                  ),
+                ],
               ),
             ),
           ),
-        ),
-      ],
+          RepaintBoundary(
+            child: NotificationListener<BaseNotification>(
+              onNotification: (n) {
+                if (n is FirstOpenNotification) {
+                  _state.value = 0;
+                  _timer = Timer.periodic(const Duration(seconds: 1), (i) {
+                    if (_time.value < 999) _time.value += _delta;
+                  });
+                } else if (n is FlagNotification) {
+                  _mines.value += n.md;
+                } else if (n is WinNotification && _state.value != 1) {
+                  _state.value = 1;
+                  _timer?.cancel();
+                  _mines.value = 0;
+                  _showWinMessage();
+                } else if (n is LoseNotification && _state.value != 2) {
+                  _state.value = 2;
+                  _timer?.cancel();
+                } else if (n is ResetNotification) {
+                  _totalMines = n.mines;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _resetGame());
+                }
+                return true;
+              },
+              child: ValueListenableBuilder<int>(
+                valueListenable: _state,
+                builder: (context, data, child) {
+                  return const Center(child: FieldController(cellSize: 30));
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -241,7 +238,11 @@ class FlagNotification extends BaseNotification {
 }
 class WinNotification extends BaseNotification {}
 class LoseNotification extends BaseNotification {}
-class ResetNotification extends BaseNotification {}
+class ResetNotification extends BaseNotification {
+  final int mines;
+
+  ResetNotification(this.mines);
+}
 
 class StatusIndicator extends StatelessWidget {
   final ValueNotifier<int> status;
@@ -294,7 +295,9 @@ class DigitalCounter extends StatelessWidget {
 }
 
 class FieldController extends StatefulWidget {
-  const FieldController({Key key}) : super(key: key);
+  const FieldController({Key key, this.cellSize = 30}) : super(key: key);
+
+  final double cellSize;
 
   @override
   _FieldControllerState createState() => _FieldControllerState();
@@ -302,13 +305,17 @@ class FieldController extends StatefulWidget {
 
 class _FieldControllerState extends State<FieldController> {
   final Random random = Random();
-  final Uint8List _states = Uint8List.fromList(List.filled(kCount, 16, growable: false));
+  List<int> _kNeighbors;
+  Uint8List _states;
   Set<int> _noRelocate = Set();
   bool _accepting = true;
   bool _gotZero = false;
   int _falseMines = 0;
-  int _actualMines = kMines;
+  int _actualMines;
   int _open = 0;
+  int _width;
+  int _count;
+  int _mines;
 
   @override
   void initState() {
@@ -316,15 +323,47 @@ class _FieldControllerState extends State<FieldController> {
     Screen.resetter(context).addListener(() {
       if (mounted) {
         _resetField();
-        setState(() {});
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
       }
     });
+  }
+
+  void _calcOptions() {
+    int width = MediaQuery.of(context).size.width ~/ widget.cellSize;
+    int height = (MediaQuery.of(context).size.height - 58 - MediaQuery.of(context).padding.top) ~/ widget.cellSize;
+    int count = width * height;
+    if (count != _count) {
+      _width = width;
+      _count = count;
+      _mines = count ~/ 4.8;
+      _kNeighbors = [-1, 1, -_width, _width, -_width-1, -_width+1, _width-1, _width+1];
+      _states = Uint8List.fromList(List.filled(_count, 16, growable: false));
+      ResetNotification(_mines).dispatch(context);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _calcOptions();
+  }
+
+  @override
+  void didUpdateWidget(FieldController oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.cellSize != widget.cellSize) {
+      _calcOptions();
+    }
   }
 
   int get state => Screen.state(context).value;
 
   void _triggerWin() {
-    for (int j = 0; j < kCount; ++j) {
+    for (int j = 0; j < _count; ++j) {
       if (_states[j] & 15 > 8) {
         _states[j] |= 32;
       }
@@ -336,7 +375,7 @@ class _FieldControllerState extends State<FieldController> {
   }
 
   void _onTapCell(int i) {
-    if (i < 0 || i >= kCount) return;
+    if (i < 0 || i >= _count) return;
     if (!_accepting) {
       _accepting = true;
       return;
@@ -352,7 +391,7 @@ class _FieldControllerState extends State<FieldController> {
   void _onLongTapCell(int i) {
     if (i < 0) return;
     int state = _states[i];
-    if (state & 16 == 0) return;
+    if (state & 16 == 0) return _onTapCell(i);
     HapticFeedback.vibrate();
     int md = _states[i] & 32 > 0 ? 1 : -1;
     FlagNotification(md).dispatch(context);
@@ -374,32 +413,32 @@ class _FieldControllerState extends State<FieldController> {
     _noRelocate = Set();
     _falseMines = 0;
     _open = 0;
-    _states.setAll(0, List.filled(kCount, 16, growable: false));
+    _states.setAll(0, List.filled(_count, 16, growable: false));
   }
 
   void _fillField(int touchPoint) {
     Set<int> mines = {};
-    while(mines.length < kMines) {
-      int point = random.nextInt(kCount);
+    while(mines.length < _mines) {
+      int point = random.nextInt(_count);
       while(point == touchPoint) {
-        point = random.nextInt(kCount);
+        point = random.nextInt(_count);
       }
       mines.add(point);
     }
     mines.forEach((i) {
       _states[i] = 25;
     });
-    _actualMines = kMines;
+    _actualMines = _mines;
   }
 
   bool _openAt(int t, [bool skipCascade = false]) {
     int _state = state;
     if (_state & 1 != (_state & 2) >> 1) {
-      ResetNotification().dispatch(context);
+      ResetNotification(_mines).dispatch(context);
       _resetField();
       return false;
     }
-    if (t < 0 || t > kCount - 1) return false;
+    if (t < 0 || t > _count - 1) return false;
     if (_state > 0) {
       FirstOpenNotification().dispatch(context);
       _fillField(t);
@@ -415,7 +454,7 @@ class _FieldControllerState extends State<FieldController> {
       } else {
         int newPos;
         do {
-          newPos = random.nextInt(kCount);
+          newPos = random.nextInt(_count);
         } while(newPos == t || _states[newPos] & 15 > 8 || (_noRelocate?.contains(newPos) ?? false));
         _states[newPos] = 25;
         _states[t] = 16;
@@ -427,12 +466,12 @@ class _FieldControllerState extends State<FieldController> {
       acc += val & 15 > 8 ? 1 : 0;
       flags += (val & 32) >> 5;
     }
-    int c = t % kWidth;
+    int c = t % _width;
     Set<int> cn = Set();
     for (int a in _kNeighbors) {
       int nt = t + a;
-      if (nt < 0 || nt >= kCount) continue;
-      int nc = nt % kWidth;
+      if (nt < 0 || nt >= _count) continue;
+      int nc = nt % _width;
       if ((nc-c).abs() > 1) continue;
       _noRelocate?.add(nt);
       if (!skipCascade && _states[nt] & 16 > 0) {
@@ -449,7 +488,7 @@ class _FieldControllerState extends State<FieldController> {
     }
     _states[t] = acc;
     if (!skipCascade) {
-      if (_open == kFree) {
+      if (_open == _count - _mines) {
         _triggerWin();
         return true;
       }
@@ -469,6 +508,8 @@ class _FieldControllerState extends State<FieldController> {
     return FieldRenderObject(
       gameState: state,
       states: List.of(_states),
+      cellSize: widget.cellSize,
+      width: _width,
       onTap: _onTapCell,
       onLongTap: _onLongTapCell,
     );

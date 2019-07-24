@@ -2,6 +2,8 @@ import 'package:flutter/rendering.dart';
 import 'package:minesweeper/constants.dart';
 import 'package:minesweeper/gestures.dart';
 
+const TextDirection _kd = TextDirection.ltr;
+const FontWeight _kw = FontWeight.bold;
 const BoxDecoration _kOpenDecor = BoxDecoration(
   border: Border.fromBorderSide(BorderSide(width: 0.5, color: kGray700)),
   color: kGray400,
@@ -29,76 +31,111 @@ const BoxDecoration _kRedClosedDecor = BoxDecoration(
   color: kRed500,
 );
 
-final List<TextPainter> _kPainters = [
-  TextPainter(text: TextSpan(text: '1', style: TextStyle(color: Color(0xff0000ff), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '2', style: TextStyle(color: Color(0xff008000), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '3', style: TextStyle(color: Color(0xffff0000), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '4', style: TextStyle(color: Color(0xff000080), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '5', style: TextStyle(color: Color(0xff800000), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '6', style: TextStyle(color: Color(0xff008080), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '7', style: TextStyle(color: Color(0xff808000), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: '8', style: TextStyle(color: Color(0xff800080), fontSize: 24, fontWeight: FontWeight.bold)), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: String.fromCharCode(0xe5cd), style: TextStyle(color: Color(0xff000000), fontSize: 28, fontFamily: 'MaterialIcons')), textDirection: TextDirection.ltr),
-  TextPainter(text: TextSpan(text: String.fromCharCode(0xe153), style: TextStyle(color: Color(0xff000000), fontSize: 24, fontFamily: 'MaterialIcons')), textDirection: TextDirection.ltr),
-];
+const Map<String, TextStyle> _kSymbols = {
+  '1': TextStyle(color: Color(0xff0000ff), fontWeight: _kw),
+  '2': TextStyle(color: Color(0xff008000), fontWeight: _kw),
+  '3': TextStyle(color: Color(0xffff0000), fontWeight: _kw),
+  '4': TextStyle(color: Color(0xff000080), fontWeight: _kw),
+  '5': TextStyle(color: Color(0xff800000), fontWeight: _kw),
+  '6': TextStyle(color: Color(0xff008080), fontWeight: _kw),
+  '7': TextStyle(color: Color(0xff808000), fontWeight: _kw),
+  '8': TextStyle(color: Color(0xff800080), fontWeight: _kw),
+  '\ue5cd': TextStyle(color: Color(0xff000000), fontFamily: 'MaterialIcons'),
+  '\ue153': TextStyle(color: Color(0xff000000), fontFamily: 'MaterialIcons'),
+};
 
 class RenderField extends RenderBox {
   RenderField({
     int gameState,
     List<int> states,
-    ValueChanged<int> onTap,
-    ValueChanged<int> onLongTap,
+    double cellSize,
+    int width,
+    this.onTap,
+    this.onLongTap,
   }) :  _gameState = gameState,
         _states = states,
-        onTap = onTap,
-        onLongTap = onLongTap {
+        _cellSize = cellSize,
+        _width = width {
+    _painters = _kSymbols.entries.map((e) {
+      return TextPainter(
+        text: TextSpan(text: e.key, style: e.value.copyWith(fontSize: cellSize * 0.8)),
+        textDirection: _kd,
+      )..layout();
+    }).toList(growable: false);
+    _children = List.generate(states.length, (_) => RenderCell(), growable: false);
     for (var child in _children) {
       adoptChild(child);
     }
-  }
-
-  List<int> get states => _states;
-  List<int> _states;
-  set states(List<int> newStates) {
-    assert(newStates != null);
-    assert(newStates.length == states.length);
-    //if (_states == newStates) return;
-    for (int i = 0; i < kCount; ++i) {
-      int ns = newStates[i];
-      if (ns != states[i] && _children[i] != null) {
-        _children[i].state = ns;
-      }
-    }
-    _states = newStates;
   }
 
   ValueChanged<int> onTap;
 
   ValueChanged<int> onLongTap;
 
+  List<int> get states => _states;
+  List<int> _states;
+  set states(List<int> newStates) {
+    assert(newStates != null);
+    if (newStates.length == states.length) {
+      for (int i = 0; i < newStates.length; ++i) {
+        int ns = newStates[i];
+        if (ns != states[i] && _children[i] != null) {
+          _children[i].state = ns;
+        }
+      }
+      _states = newStates;
+    } else {
+      for (var child in _children) {
+        dropChild(child);
+      }
+      _states = newStates;
+      _children = List.generate(states.length, (_) => RenderCell(), growable: false);
+      for (var child in _children) {
+        adoptChild(child);
+      }
+      markNeedsLayout();
+    }
+  }
+
   int get gameState => _gameState;
   int _gameState = 3;
   set gameState(int gs) {
     _gameState = gs;
     if (gs == 2) {
-      for (int i = 0; i < kCount; ++i) {
+      for (int i = 0; i < states.length; ++i) {
         if (states[i] & 48 > 0 && _children[i] != null) {
           _children[i].markNeedsPaint();
         }
       }
-    }/* else if (gs == 3) {
-      for (int i = 0; i < _kCount; ++i) {
-        if (states[i] & 48 > 0 && _children[i] != null) {
-          _children[i].markNeedsPaint();
-        }
-      }
-    }*/
+    }
   }
 
-  final List<RenderCell> _children = List.generate(kCount, (_) => RenderCell());
-  double single;
+  double get cellSize => _cellSize;
+  double _cellSize;
+  set cellSize(double newSize) {
+    assert(newSize != null);
+    if (_cellSize == newSize) return;
+    _cellSize = newSize;
+    _painters = _kSymbols.entries.map((e) {
+      return TextPainter(
+        text: TextSpan(text: e.key, style: e.value.copyWith(fontSize: cellSize * 0.8)),
+        textDirection: _kd,
+      )..layout();
+    }).toList(growable: false);
+    markNeedsLayout();
+  }
 
-  bool get sizedByParent => true;
+  int get width => _width;
+  int _width;
+  set width(int newWidth) {
+    assert(newWidth != null);
+    if (_width == newWidth) return;
+    _width = newWidth;
+    markNeedsLayout();
+  }
+
+  List<TextPainter> _painters;
+  List<RenderCell> _children;
 
   @override
   void setupParentData(RenderObject child) {
@@ -129,28 +166,22 @@ class RenderField extends RenderBox {
   }
 
   @override
-  void performResize() {
-    size = constraints.biggest;
-    assert(size.isFinite);
-    single = size.width / kWidth;
-  }
-
-  @override
   void performLayout() {
-    for (var tp in _kPainters) {
-      tp.layout();
-    }
-    for (int i = 0; i < kCount; ++i) {
+    double w = cellSize * width;
+    double gap = constraints.biggest.width - w;
+    size = Size(w, states.length / width * cellSize + gap);
+    for (int i = 0; i < _children.length; ++i) {
       final child = _children[i];
       final pd = child.parentData;
       if (pd is FieldCellParentData) {
         pd.pos = i;
-        pd.i = i % kWidth;
-        pd.j = i ~/ kWidth;
-        pd.offset = Offset(single * pd.i, single * pd.j);
+        pd.i = i % width;
+        pd.j = i ~/ width;
+        pd.painters = _painters;
+        pd.offset = Offset(cellSize * pd.i, cellSize * pd.j + gap / 2);
       }
       child.state = _states[i];
-      child.layout(BoxConstraints.tight(Size.square(single)));
+      child.layout(BoxConstraints.tight(Size.square(cellSize)));
     }
   }
 
@@ -185,6 +216,7 @@ class RenderField extends RenderBox {
 }
 
 class FieldCellParentData extends BoxParentData {
+  List<TextPainter> painters;
   int pos;
   int i;
   int j;
@@ -201,6 +233,8 @@ class RenderCell extends RenderBox {
     _state = ns;
     markNeedsPaint();
   }
+
+  List<TextPainter> painters;
 
   RenderField get field => parent;
 
@@ -219,6 +253,7 @@ class RenderCell extends RenderBox {
       final FieldCellParentData pd = parentData;
       tapRecognizer.onTap = () => field.onTap(pd.pos);
       longTapRecognizer.onLongPress = () => field.onLongTap(pd.pos);
+      painters = pd.painters;
     }
   }
 
@@ -240,11 +275,11 @@ class RenderCell extends RenderBox {
     );
     TextPainter tp;
     if (state > 0 && state < 9) {
-      tp = _kPainters[state - 1];
+      tp = painters[state - 1];
     } else if (state & 32 > 0) {
-      tp = _kPainters[9];
+      tp = painters[9];
     } else if (state & 15 > 8 && (state & 16 == 0 || gameState == 2)) {
-      tp = _kPainters[8];
+      tp = painters[8];
     }
     tp?.paint(context.canvas, offset + Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
   }

@@ -1,11 +1,5 @@
 import 'package:flutter/painting.dart' show Color;
 
-const int kWidth = 14;
-const int kHeight = 22;
-const int kCount = kWidth * kHeight;
-const int kMines = 64;
-const int kFree = kCount - kMines;
-
 const Color kGray300 = Color(0xFFE0E0E0);
 const Color kGray400 = Color(0xFFBDBDBD);
 const Color kGray500 = Color(0xFF9E9E9E);
