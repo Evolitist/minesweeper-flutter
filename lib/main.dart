@@ -4,6 +4,7 @@ import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, SystemChrome, SystemUiOverlayStyle, DeviceOrientation;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:minesweeper/constants.dart';
 import 'package:minesweeper/widget/counter.dart';
@@ -17,8 +18,11 @@ import 'package:minesweeper/widget/field.dart';
 /// 16 (0b00010000) = hidden
 /// 32 (0b00100000) = flag
 
+SharedPreferences kPrefs;
+
 void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  kPrefs = await SharedPreferences.getInstance();
   runApp(MaterialApp(
     title: 'Minesweeper',
     color: const Color(0xffffffff),
@@ -63,12 +67,125 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
       statusBarColor: const Color(0),
       systemNavigationBarColor: kGray400,
     ));
+    if (kPrefs.get('firstRun') == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        kPrefs.setBool('firstRun', true);
+        _showInfoSheet();
+      });
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) _delta = 0;
-    if (state == AppLifecycleState.resumed) _delta = 1;
+    if (state == AppLifecycleState.paused && _delta > 0) _delta = 0;
+    if (state == AppLifecycleState.resumed && _delta >= 0) _delta = 1;
+  }
+
+  Future<void> _showInfoSheet() async {
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light.copyWith(
+      statusBarColor: const Color(0),
+      systemNavigationBarColor: kGray400,
+    ));
+    double tp = MediaQuery.of(context).padding.top;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(tp),
+        ),
+      ),
+      builder: (ctx) {
+        final double h = 136 / MediaQuery.of(ctx).size.height;
+        return DraggableScrollableSheet(
+          expand: false,
+          minChildSize: h,
+          initialChildSize: h,
+          builder: (ctx, scroller) {
+            return SingleChildScrollView(
+              controller: scroller,
+              child: ListBody(
+                children: <Widget>[
+                  SizedBox(
+                    height: tp,
+                    child: const Align(
+                      alignment: Alignment.center,
+                      child: DecoratedBox(
+                        position: DecorationPosition.foreground,
+                        decoration: BoxDecoration(
+                          color: kGray400,
+                          borderRadius: BorderRadius.all(Radius.circular(3)),
+                        ),
+                        child: SizedBox(height: 6, width: 64),
+                      ),
+                    ),
+                  ),
+                  const AboutListTile(
+                    icon: Icon(Icons.info_outline),
+                    child: Text('About'),
+                    applicationVersion: '1.0.0',
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.settings),
+                    title: Text('Game settings...'),
+                  ),
+                  const Divider(height: 0),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'STATS',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 3),
+                  ),
+                  ListTile(
+                    dense: true,
+                    title: const Text('Games played'),
+                    trailing: Text('${kPrefs.getInt('timesPlayed') ?? 0}'),
+                  ),
+                  ListTile(
+                    dense: true,
+                    title: const Text('Wins'),
+                    trailing: Text('${kPrefs.getInt('timesWon') ?? 0}'),
+                  ),
+                  if (kPrefs.getInt('timesWon')?.compareTo(0) == 1)
+                    ListTile(
+                      dense: true,
+                      title: const Text('Win ratio'),
+                      trailing: Text('${(kPrefs.getInt('timesWon') / kPrefs.getInt('timesPlayed') * 100).toStringAsFixed(2)}%'),
+                    ),
+                  ListTile(
+                    dense: true,
+                    title: const Text('Losses'),
+                    trailing: Text('${kPrefs.getInt('timesLost') ?? 0}'),
+                  ),
+                  if (kPrefs.getInt('timesLost')?.compareTo(0) == 1)
+                    ListTile(
+                      dense: true,
+                      title: const Text('Lose ratio'),
+                      trailing: Text('${(kPrefs.getInt('timesLost') / kPrefs.getInt('timesPlayed') * 100).toStringAsFixed(2)}%'),
+                    ),
+                  ListTile(
+                    dense: true,
+                    title: const Text('Restarts'),
+                    trailing: Text('${kPrefs.getInt('timesRestarted') ?? 0}'),
+                  ),
+                  /*const Divider(height: 0),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'TIME',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 3),
+                  ),*/
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark.copyWith(
+      statusBarColor: const Color(0),
+      systemNavigationBarColor: kGray400,
+    ));
   }
 
   void _showWinMessage() {
@@ -76,10 +193,15 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
     final String seconds = '${_time.value % 60}'.padLeft(2, '0');
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) {
         return AlertDialog(
           title: const Text('You won!'),
-          content: Text('$minutes:$seconds'),
+          content: ListTile(
+            title: const Text('Time:'),
+            trailing: Text('$minutes:$seconds'),
+            contentPadding: EdgeInsets.zero,
+          ),
           actions: <Widget>[
             FlatButton(
               child: const Text('OK'),
@@ -97,13 +219,14 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
     _timer?.cancel();
     _mines.value = _totalMines ?? 0;
     _time.value = 0;
+    if (_state.value == 0) kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
     _state.value = 3;
     _resetter.release();
   }
 
   void _requestRestart() {
     if (_state.value > 0) {
-      _resetGame();
+      if (_state.value < 3) _resetGame();
       return;
     }
     showDialog(
@@ -159,68 +282,94 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kGray400,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
         children: <Widget>[
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-              child: Stack(
-                alignment: Alignment.center,
-                children: <Widget>[
-                  const SizedBox(height: 58, width: double.infinity),
-                  StatusIndicator(
-                    status: _state,
-                    onTap: () {
-                      if (_state.value < 3) _requestRestart();
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: <Widget>[
+                      const SizedBox(height: 58, width: double.infinity),
+                      StatusIndicator(
+                        status: _state,
+                        onTap: _requestRestart,
+                      ),
+                      Positioned(
+                        left: 16,
+                        width: 80,
+                        height: 48,
+                        child: _buildCounter(context, _time),
+                      ),
+                      Positioned(
+                        right: 16,
+                        width: 80,
+                        height: 48,
+                        child: _buildCounter(context, _mines),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              RepaintBoundary(
+                child: NotificationListener<BaseNotification>(
+                  onNotification: (n) {
+                    if (n is FirstOpenNotification) {
+                      _state.value = 0;
+                      _timer = Timer.periodic(const Duration(seconds: 1), (i) {
+                        if (_delta > 0 && _time.value < 999) _time.value += _delta;
+                      });
+                    } else if (n is FlagNotification) {
+                      _mines.value += n.md;
+                    } else if (n is WinNotification && _state.value != 1) {
+                      _state.value = 1;
+                      _timer?.cancel();
+                      kPrefs.setInt('timesWon', (kPrefs.getInt('timesWon') ?? 0) + 1);
+                      _mines.value = 0;
+                      _showWinMessage();
+                    } else if (n is LoseNotification && _state.value != 2) {
+                      _state.value = 2;
+                      _timer?.cancel();
+                      if (!n.random) {
+                        kPrefs.setInt('timesLost', (kPrefs.getInt('timesLost') ?? 0) + 1);
+                      }
+                    } else if (n is ResetNotification) {
+                      _totalMines = n.mines;
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _resetGame());
+                    }
+                    return true;
+                  },
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _state,
+                    builder: (context, data, child) {
+                      return const Center(child: FieldController(cellSize: 30));
                     },
                   ),
-                  Positioned(
-                    left: 16,
-                    width: 80,
-                    height: 48,
-                    child: _buildCounter(context, _time),
-                  ),
-                  Positioned(
-                    right: 16,
-                    width: 80,
-                    height: 48,
-                    child: _buildCounter(context, _mines),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-          RepaintBoundary(
-            child: NotificationListener<BaseNotification>(
-              onNotification: (n) {
-                if (n is FirstOpenNotification) {
-                  _state.value = 0;
-                  _timer = Timer.periodic(const Duration(seconds: 1), (i) {
-                    if (_time.value < 999) _time.value += _delta;
-                  });
-                } else if (n is FlagNotification) {
-                  _mines.value += n.md;
-                } else if (n is WinNotification && _state.value != 1) {
-                  _state.value = 1;
-                  _timer?.cancel();
-                  _mines.value = 0;
-                  _showWinMessage();
-                } else if (n is LoseNotification && _state.value != 2) {
-                  _state.value = 2;
-                  _timer?.cancel();
-                } else if (n is ResetNotification) {
-                  _totalMines = n.mines;
-                  WidgetsBinding.instance.addPostFrameCallback((_) => _resetGame());
-                }
-                return true;
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 8,
+            child: Builder(
+              builder: (ctx) {
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (e) {
+                    if (e.delta.dy < 0 && _delta > 0) {
+                      final int lastDelta = _delta;
+                      _delta = -1;
+                      _showInfoSheet().then((_) => _delta = lastDelta);
+                    }
+                  },
+                );
               },
-              child: ValueListenableBuilder<int>(
-                valueListenable: _state,
-                builder: (context, data, child) {
-                  return const Center(child: FieldController(cellSize: 30));
-                },
-              ),
             ),
           ),
         ],
@@ -237,7 +386,11 @@ class FlagNotification extends BaseNotification {
   FlagNotification(this.md);
 }
 class WinNotification extends BaseNotification {}
-class LoseNotification extends BaseNotification {}
+class LoseNotification extends BaseNotification {
+  final bool random;
+
+  LoseNotification(this.random);
+}
 class ResetNotification extends BaseNotification {
   final int mines;
 
@@ -305,7 +458,7 @@ class FieldController extends StatefulWidget {
 
 class _FieldControllerState extends State<FieldController> {
   final Random random = Random();
-  List<int> _kNeighbors;
+  List<int> _neighbors;
   Uint8List _states;
   Set<int> _noRelocate = Set();
   bool _accepting = true;
@@ -340,7 +493,7 @@ class _FieldControllerState extends State<FieldController> {
       _width = width;
       _count = count;
       _mines = count ~/ 4.8;
-      _kNeighbors = [-1, 1, -_width, _width, -_width-1, -_width+1, _width-1, _width+1];
+      _neighbors = [-1, 1, -_width, _width, -_width-1, -_width+1, _width-1, _width+1];
       _states = Uint8List.fromList(List.filled(_count, 16, growable: false));
       ResetNotification(_mines).dispatch(context);
     }
@@ -446,9 +599,22 @@ class _FieldControllerState extends State<FieldController> {
     if (_states[t] == 0 || _states[t] & 32 > 0) {
       return false;
     }
+    int c;
     if (_states[t] & 15 > 8) {
       if (_gotZero || (_noRelocate?.contains(t) ?? true)) {
-        LoseNotification().dispatch(context);
+        c = t % _width;
+        bool r = true;
+        for (int a in _neighbors) {
+          int nt = t + a;
+          if (nt < 0 || nt >= _count) continue;
+          int nc = nt % _width;
+          if ((nc-c).abs() > 1) continue;
+          if (_states[nt] & 16 == 0) {
+            r = false;
+            break;
+          }
+        }
+        LoseNotification(r).dispatch(context);
         _states[t] = 9;
         return true;
       } else {
@@ -466,9 +632,9 @@ class _FieldControllerState extends State<FieldController> {
       acc += val & 15 > 8 ? 1 : 0;
       flags += (val & 32) >> 5;
     }
-    int c = t % _width;
+    c = t % _width;
     Set<int> cn = Set();
-    for (int a in _kNeighbors) {
+    for (int a in _neighbors) {
       int nt = t + a;
       if (nt < 0 || nt >= _count) continue;
       int nc = nt % _width;
