@@ -18,6 +18,8 @@ import 'package:minesweeper/widget/field.dart';
 /// 16 (0b00010000) = hidden
 /// 32 (0b00100000) = flag
 
+const double _kAppBarHeight = 60;
+
 SharedPreferences kPrefs;
 
 void main() async {
@@ -70,6 +72,10 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
     if (kPrefs.get('firstRun') == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         kPrefs.setBool('firstRun', true);
+        kPrefs.setInt('timesPlayed', 0);
+        kPrefs.setInt('timesWon', 0);
+        kPrefs.setInt('timesLost', 0);
+        kPrefs.setInt('timesRestarted', 0);
         _showInfoSheet();
       });
     }
@@ -146,7 +152,7 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
                     title: const Text('Wins'),
                     trailing: Text('${kPrefs.getInt('timesWon') ?? 0}'),
                   ),
-                  if (kPrefs.getInt('timesWon')?.compareTo(0) == 1)
+                  if (kPrefs.getInt('timesWon') != null && kPrefs.getInt('timesWon') > 0)
                     ListTile(
                       dense: true,
                       title: const Text('Win ratio'),
@@ -157,7 +163,7 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
                     title: const Text('Losses'),
                     trailing: Text('${kPrefs.getInt('timesLost') ?? 0}'),
                   ),
-                  if (kPrefs.getInt('timesLost')?.compareTo(0) == 1)
+                  if (kPrefs.getInt('timesLost') != null && kPrefs.getInt('timesLost') > 0)
                     ListTile(
                       dense: true,
                       title: const Text('Lose ratio'),
@@ -168,13 +174,15 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
                     title: const Text('Restarts'),
                     trailing: Text('${kPrefs.getInt('timesRestarted') ?? 0}'),
                   ),
-                  /*const Divider(height: 0),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'TIME',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 3),
-                  ),*/
+                  /*if (kPrefs.getInt('timesWon') != null && kPrefs.getInt('timesWon') > 0) ...[
+                    const Divider(height: 0),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'TIME',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 3),
+                    ),
+                  ],*/
                 ],
               ),
             );
@@ -219,7 +227,6 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
     _timer?.cancel();
     _mines.value = _totalMines ?? 0;
     _time.value = 0;
-    if (_state.value == 0) kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
     _state.value = 3;
     _resetter.release();
   }
@@ -252,6 +259,8 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
       },
     ).then((b) {
       if (b == true) {
+        kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
+        kPrefs.setInt('timesRestarted', (kPrefs.getInt('timesRestarted') ?? 0) + 1);
         _resetGame();
       }
     });
@@ -259,7 +268,7 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
 
   Widget _buildCounter(BuildContext context, ValueNotifier<int> counter) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 82, maxHeight: 60),
+      constraints: const BoxConstraints(maxWidth: 82, maxHeight: _kAppBarHeight),
       child: DecoratedBox(
         decoration: const BoxDecoration(
           color: kGray900,
@@ -280,73 +289,71 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kGray400,
-      body: Stack(
+    return Container(
+      color: kGray400,
+      child: Stack(
         children: <Widget>[
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: <Widget>[
-                      const SizedBox(height: 58, width: double.infinity),
-                      StatusIndicator(
-                        status: _state,
-                        onTap: _requestRestart,
-                      ),
-                      Positioned(
-                        left: 16,
-                        width: 80,
-                        height: 48,
-                        child: _buildCounter(context, _time),
-                      ),
-                      Positioned(
-                        right: 16,
-                        width: 80,
-                        height: 48,
-                        child: _buildCounter(context, _mines),
-                      ),
-                    ],
+              SizedBox(height: MediaQuery.of(context).padding.top),
+              Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  const SizedBox(height: _kAppBarHeight, width: double.infinity),
+                  StatusIndicator(
+                    status: _state,
+                    onTap: _requestRestart,
                   ),
-                ),
+                  Positioned(
+                    left: 16,
+                    child: _buildCounter(context, _time),
+                  ),
+                  Positioned(
+                    right: 16,
+                    child: _buildCounter(context, _mines),
+                  ),
+                ],
               ),
-              RepaintBoundary(
-                child: NotificationListener<BaseNotification>(
-                  onNotification: (n) {
-                    if (n is FirstOpenNotification) {
-                      _state.value = 0;
-                      _timer = Timer.periodic(const Duration(seconds: 1), (i) {
-                        if (_delta > 0 && _time.value < 999) _time.value += _delta;
-                      });
-                    } else if (n is FlagNotification) {
-                      _mines.value += n.md;
-                    } else if (n is WinNotification && _state.value != 1) {
-                      _state.value = 1;
-                      _timer?.cancel();
-                      kPrefs.setInt('timesWon', (kPrefs.getInt('timesWon') ?? 0) + 1);
-                      _mines.value = 0;
-                      _showWinMessage();
-                    } else if (n is LoseNotification && _state.value != 2) {
-                      _state.value = 2;
-                      _timer?.cancel();
-                      if (!n.random) {
-                        kPrefs.setInt('timesLost', (kPrefs.getInt('timesLost') ?? 0) + 1);
-                      }
-                    } else if (n is ResetNotification) {
-                      _totalMines = n.mines;
-                      WidgetsBinding.instance.addPostFrameCallback((_) => _resetGame());
-                    }
-                    return true;
-                  },
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _state,
-                    builder: (context, data, child) {
-                      return const Center(child: FieldController(cellSize: 30));
-                    },
+              Expanded(
+                child: Center(
+                  child: RepaintBoundary(
+                    child: NotificationListener<BaseNotification>(
+                      onNotification: (n) {
+                        if (n is FirstOpenNotification) {
+                          _state.value = 0;
+                          _timer = Timer.periodic(const Duration(seconds: 1), (i) {
+                            if (_delta > 0 && _time.value < 999) _time.value += _delta;
+                          });
+                        } else if (n is FlagNotification) {
+                          _mines.value += n.md;
+                        } else if (n is WinNotification && _state.value != 1) {
+                          _state.value = 1;
+                          _timer?.cancel();
+                          kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
+                          kPrefs.setInt('timesWon', (kPrefs.getInt('timesWon') ?? 0) + 1);
+                          _mines.value = 0;
+                          _showWinMessage();
+                        } else if (n is LoseNotification && _state.value != 2) {
+                          _state.value = 2;
+                          _timer?.cancel();
+                          kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
+                          if (!n.random) {
+                            kPrefs.setInt('timesLost', (kPrefs.getInt('timesLost') ?? 0) + 1);
+                          }
+                        } else if (n is ResetNotification) {
+                          _totalMines = n.mines;
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _resetGame());
+                        }
+                        return true;
+                      },
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _state,
+                        builder: (context, data, child) {
+                          return const Center(child: FieldController(cellSize: 30));
+                        },
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -356,13 +363,14 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 8,
+            height: 16,
             child: Builder(
               builder: (ctx) {
                 return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
+                  behavior: HitTestBehavior.translucent,
                   onVerticalDragUpdate: (e) {
-                    if (e.delta.dy < 0 && _delta > 0) {
+                    if (e.delta.dy <= -4 && _delta > 0) {
+                      print(e.delta.dy);
                       final int lastDelta = _delta;
                       _delta = -1;
                       _showInfoSheet().then((_) => _delta = lastDelta);
@@ -487,7 +495,7 @@ class _FieldControllerState extends State<FieldController> {
 
   void _calcOptions() {
     int width = MediaQuery.of(context).size.width ~/ widget.cellSize;
-    int height = (MediaQuery.of(context).size.height - 58 - MediaQuery.of(context).padding.top) ~/ widget.cellSize;
+    int height = (MediaQuery.of(context).size.height - _kAppBarHeight - MediaQuery.of(context).padding.top) ~/ widget.cellSize;
     int count = width * height;
     if (count != _count) {
       _width = width;
@@ -542,14 +550,14 @@ class _FieldControllerState extends State<FieldController> {
   }
 
   void _onLongTapCell(int i) {
-    if (i < 0) return;
-    int state = _states[i];
-    if (state & 16 == 0) return _onTapCell(i);
+    if (i < 0 || i >= _states.length || state > 0) return;
+    int s = _states[i];
+    if (s & 16 == 0) return _onTapCell(i);
     HapticFeedback.vibrate();
-    int md = _states[i] & 32 > 0 ? 1 : -1;
+    int md = s & 32 > 0 ? 1 : -1;
     FlagNotification(md).dispatch(context);
-    int amd = _states[i] & 15 > 8 ? md : 0;
-    int fmd = _states[i] & 15 > 8 ? 0 : md;
+    int amd = s & 15 > 8 ? md : 0;
+    int fmd = s & 15 > 8 ? 0 : md;
     _actualMines += amd;
     _falseMines += fmd;
     _states[i] ^= 32;

@@ -169,7 +169,7 @@ class RenderField extends RenderBox {
   void performLayout() {
     double w = cellSize * width;
     double gap = constraints.biggest.width - w;
-    size = Size(w, states.length / width * cellSize + gap);
+    size = Size(w, constraints.constrainHeight(states.length / width * cellSize + gap / 2));
     for (int i = 0; i < _children.length; ++i) {
       final child = _children[i];
       final pd = child.parentData;
@@ -178,7 +178,7 @@ class RenderField extends RenderBox {
         pd.i = i % width;
         pd.j = i ~/ width;
         pd.painters = _painters;
-        pd.offset = Offset(cellSize * pd.i, cellSize * pd.j + gap / 2);
+        pd.offset = Offset(cellSize * pd.i, cellSize * pd.j);
       }
       child.state = _states[i];
       child.layout(BoxConstraints.tight(Size.square(cellSize)));
