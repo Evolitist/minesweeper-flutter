@@ -168,8 +168,7 @@ class RenderField extends RenderBox {
   @override
   void performLayout() {
     double w = cellSize * width;
-    double gap = constraints.biggest.width - w;
-    size = Size(w, constraints.constrainHeight(states.length / width * cellSize + gap / 2));
+    size = Size(w, constraints.constrainHeight(states.length / width * cellSize));
     for (int i = 0; i < _children.length; ++i) {
       final child = _children[i];
       final pd = child.parentData;

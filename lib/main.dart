@@ -56,6 +56,8 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
   final ValueNotifier<int> _mines = ValueNotifier(0);
   final ValueNotifier<int> _time = ValueNotifier(0);
   final ValueNotifier<int> _state = ValueNotifier(3);
+  final ValueNotifier<double> _cellSize = ValueNotifier(30);
+  final ValueNotifier<double> _difficulty = ValueNotifier(7);
   int _totalMines;
   int _delta = 1;
   Timer _timer;
@@ -69,6 +71,10 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
       statusBarColor: const Color(0),
       systemNavigationBarColor: kGray400,
     ));
+    _cellSize.value = kPrefs.getDouble('cellSize') ?? 30;
+    _cellSize.addListener(() => kPrefs.setDouble('cellSize', _cellSize.value));
+    _difficulty.value = kPrefs.getDouble('difficulty') ?? 7;
+    _difficulty.addListener(() => kPrefs.setDouble('difficulty', _difficulty.value));
     if (kPrefs.get('firstRun') == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         kPrefs.setBool('firstRun', true);
@@ -87,12 +93,103 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && _delta >= 0) _delta = 1;
   }
 
+  Future<void> _showSettingsDialog() async {
+    final ValueNotifier<double> cellSize = ValueNotifier(_cellSize.value);
+    final ValueNotifier<double> difficulty = ValueNotifier(_difficulty.value);
+    var b = await showDialog(
+      context: context,
+      builder: (ctx) {
+        return SimpleDialog(
+          contentPadding: const EdgeInsets.fromLTRB(0.0, 12.0, 0.0, 0.0),
+          title: const Text('Game settings'),
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Text('Cell size', style: Theme.of(context).textTheme.subhead),
+            ),
+            ValueListenableBuilder<double>(
+              valueListenable: cellSize,
+              builder: (ctx, val, child) {
+                return Slider(
+                  min: 30,
+                  max: 72,
+                  value: val,
+                  label: val.toStringAsFixed(0),
+                  onChanged: (v) => cellSize.value = v,
+                );
+              },
+            ),
+            Container(
+              height: 72.0 * 3.0,
+              alignment: Alignment.center,
+              child: ValueListenableBuilder<double>(
+                valueListenable: cellSize,
+                builder: (ctx, val, child) {
+                  return FieldRenderObject(
+                    gameState: 2,
+                    states: const [16, 25, 9, 48, 3, 2, 57, 2, 0],
+                    cellSize: val,
+                    width: 3,
+                  );
+                },
+              ),
+            ),
+            ListTile(
+              title: const Text('Difficulty'),
+              trailing: DropdownButtonHideUnderline(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: difficulty,
+                  builder: (ctx, val, child) {
+                    return DropdownButton<double>(
+                      value: val,
+                      items: [
+                        DropdownMenuItem(child: const Text('Easy'), value: 10),
+                        DropdownMenuItem(child: const Text('Normal'), value: 7),
+                        DropdownMenuItem(child: const Text('Hard'), value: 4.8),
+                        DropdownMenuItem(child: const Text('Harder'), value: 4.1),
+                      ],
+                      onChanged: (d) => difficulty.value = d,
+                    );
+                  },
+                ),
+              ),
+            ),
+            ButtonBar(
+              children: <Widget>[
+                FlatButton(
+                  child: const Text('CANCEL'),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+                FlatButton(
+                  child: const Text('OK'),
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+    if (b != null) {
+      _cellSize.value = cellSize.value;
+      _difficulty.value = difficulty.value;
+      if (_state.value < 3) {
+        kPrefs.setInt('timesPlayed', (kPrefs.getInt('timesPlayed') ?? 0) + 1);
+        kPrefs.setInt('timesRestarted', (kPrefs.getInt('timesRestarted') ?? 0) + 1);
+        _resetGame();
+      } else {
+        setState(() => _resetGame());
+      }
+    }
+  }
+
   Future<void> _showInfoSheet() async {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light.copyWith(
       statusBarColor: const Color(0),
       systemNavigationBarColor: kGray400,
     ));
     double tp = MediaQuery.of(context).padding.top;
+    Future toReturn;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -131,9 +228,13 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
                     child: Text('About'),
                     applicationVersion: '1.0.0',
                   ),
-                  const ListTile(
+                  ListTile(
                     leading: Icon(Icons.settings),
                     title: Text('Game settings...'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      toReturn = _showSettingsDialog();
+                    },
                   ),
                   const Divider(height: 0),
                   const SizedBox(height: 16),
@@ -190,6 +291,9 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
         );
       },
     );
+    if (toReturn != null) {
+      await toReturn;
+    }
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark.copyWith(
       statusBarColor: const Color(0),
       systemNavigationBarColor: kGray400,
@@ -350,7 +454,12 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
                       child: ValueListenableBuilder<int>(
                         valueListenable: _state,
                         builder: (context, data, child) {
-                          return const Center(child: FieldController(cellSize: 30));
+                          return Center(
+                            child: FieldController(
+                              cellSize: _cellSize.value,
+                              difficulty: _difficulty.value,
+                            ),
+                          );
                         },
                       ),
                     ),
@@ -364,19 +473,15 @@ class _ScreenState extends State<Screen> with WidgetsBindingObserver {
             right: 0,
             bottom: 0,
             height: 16,
-            child: Builder(
-              builder: (ctx) {
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onVerticalDragUpdate: (e) {
-                    if (e.delta.dy <= -4 && _delta > 0) {
-                      print(e.delta.dy);
-                      final int lastDelta = _delta;
-                      _delta = -1;
-                      _showInfoSheet().then((_) => _delta = lastDelta);
-                    }
-                  },
-                );
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragUpdate: (e) {
+                if (e.delta.dy <= -4 && _delta > 0) {
+                  print(e.delta.dy);
+                  final int lastDelta = _delta;
+                  _delta = -1;
+                  _showInfoSheet().then((_) => _delta = lastDelta);
+                }
               },
             ),
           ),
@@ -456,9 +561,10 @@ class DigitalCounter extends StatelessWidget {
 }
 
 class FieldController extends StatefulWidget {
-  const FieldController({Key key, this.cellSize = 30}) : super(key: key);
+  const FieldController({Key key, this.cellSize = 30, this.difficulty = 7}) : super(key: key);
 
   final double cellSize;
+  final double difficulty;
 
   @override
   _FieldControllerState createState() => _FieldControllerState();
@@ -497,10 +603,11 @@ class _FieldControllerState extends State<FieldController> {
     int width = MediaQuery.of(context).size.width ~/ widget.cellSize;
     int height = (MediaQuery.of(context).size.height - _kAppBarHeight - MediaQuery.of(context).padding.top) ~/ widget.cellSize;
     int count = width * height;
-    if (count != _count) {
+    int mines = count ~/ widget.difficulty;
+    if (count != _count || mines != _mines) {
       _width = width;
       _count = count;
-      _mines = count ~/ 4.8;
+      _mines = mines;
       _neighbors = [-1, 1, -_width, _width, -_width-1, -_width+1, _width-1, _width+1];
       _states = Uint8List.fromList(List.filled(_count, 16, growable: false));
       ResetNotification(_mines).dispatch(context);
@@ -516,7 +623,7 @@ class _FieldControllerState extends State<FieldController> {
   @override
   void didUpdateWidget(FieldController oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cellSize != widget.cellSize) {
+    if (oldWidget.cellSize != widget.cellSize || oldWidget.difficulty != widget.difficulty) {
       _calcOptions();
     }
   }
